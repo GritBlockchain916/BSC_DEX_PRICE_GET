@@ -137,8 +137,8 @@ if __name__ == '__main__':
         excel = load_workbook('pairs.xlsx')
         sheet = excel['pairs']
 
-        # for i in range(2, 7452):
-        for i in range(2, 5):
+        for i in range(2, 7452):
+        # for i in range(2, 5):
             try:
                 dex_type = sheet[f'A{i}'].value  # the cell of dex type eg: Pancakeswap v2
                 pair_type = sheet[f'B{i}'].value # the cell of pair type eg: CATI/USDT
