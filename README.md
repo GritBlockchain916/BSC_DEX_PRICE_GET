@@ -5,18 +5,20 @@ We recommend using the latest version of Python. `python3` supports Python 3.12+
 ```bash
 sudo apt update
 sudo apt install python3
+sudo apt install python3-venv
 python3 --version
-```
-
-### install web3
-```bash
-pip install web3
 ```
 
 ## How to build?
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+```
+
+### install dependencies
+```bash
+pip install web3==6.14.0
+pip install openpyxl
 ```
 
 ## How to run?

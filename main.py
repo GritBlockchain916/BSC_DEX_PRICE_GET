@@ -53,7 +53,7 @@ def getTokenPriceFromPoolAddress(provider: Web3, index: int, bnb_price: float) -
     pair_type = sheet[f'B{index}'].value # the cell of pair type eg: CATI/USDT
     pool_addr = sheet[f'C{index}'].value # the cell of pair type eg: CATI/USDT
     pool_addr = provider.to_checksum_address(pool_addr)
-    
+
     try:
         before, separator, majorToken = pair_type.partition("/")
         if(dex_type == "Pancakeswap v3" or dex_type == "Uniswap v3"):
@@ -93,13 +93,17 @@ def getTokenPriceFromPoolAddress(provider: Web3, index: int, bnb_price: float) -
 
             # Call getReserves to fetch the pool reserves
             reserves = pool_contract.functions.getReserves().call()
+            token0_address = pool_contract.functions.token0().call()
 
             # Reserve 0 (Token0, e.g. WBNB), Reserve 1 (Token1, your token)
             reserve0 = reserves[0]  # Token1 (your token)
             reserve1 = reserves[1]  # WBNB or BNB
 
-            # Calculate price of Token1 in terms of WBNB
-            token_price = reserve1 / reserve0
+            # Calculate price
+            if(token0_address == BNBTokenAddress or token0_address == USDTokenAddress):
+                token_price = reserve0 / reserve1
+            else:
+                token_price = reserve1 / reserve0
         
         if(majorToken == "WBNB" or majorToken == "BNB"):
             token_price = float(token_price) * float(bnb_price)
@@ -109,17 +113,20 @@ def getTokenPriceFromPoolAddress(provider: Web3, index: int, bnb_price: float) -
         print(f"Error fetching token price for {pool_addr}: {e}")
         return 0
 
-def writeToExcel(index:int, token_price: float, save: bool):
-    sheet[f'H{index}'] = token_price
+def writeToExcel(block_number: int, index:int, token_price: float, save: bool):
+    sheet[f'D{index}'] = token_price
 
     current_date = datetime.now().date()
     current_time = datetime.now().time().strftime("%H:%M:%S")
-    sheet[f'J{index}'] = f'{current_date}:{current_time}'
+    sheet[f'E{index}'] = f'{current_date}:{current_time}'
 
     dex_type = sheet[f'A{index}'].value  # the cell of dex type eg: Pancakeswap v2
     pair_type = sheet[f'B{index}'].value # the cell of pair type eg: CATI/USDT
 
-    print(f'✅ 🛒: {dex_type},   🔗: {pair_type},   💰: {token_price},   ⏰: {current_date}:{current_time}')
+    if(block_number < 0):
+        print(f'✅ 🛒: {dex_type},   🔗: {pair_type},   💰: {token_price},   ⏰: {current_date}:{current_time}')
+    else:
+        print(f'✅ Updated : {block_number}, 🛒: {dex_type},   🔗: {pair_type},   💰: {token_price},   ⏰: {current_date}:{current_time}')
 
     if(save):
         excel.save(Modified_Excel)
@@ -130,8 +137,8 @@ if __name__ == '__main__':
         excel = load_workbook('pairs.xlsx')
         sheet = excel['pairs']
 
-        for i in range(2, 7452):
-        # for i in range(7012, 7022):
+        # for i in range(2, 7452):
+        for i in range(2, 5):
             try:
                 dex_type = sheet[f'A{i}'].value  # the cell of dex type eg: Pancakeswap v2
                 pair_type = sheet[f'B{i}'].value # the cell of pair type eg: CATI/USDT
@@ -142,7 +149,7 @@ if __name__ == '__main__':
                 
                 bnb_price = getBNBPrice(provider = w3)                
                 token_price = getTokenPriceFromPoolAddress(provider = w3, index=i, bnb_price = bnb_price)
-                writeToExcel(i, token_price, False)
+                writeToExcel(-1, i, token_price, False)
             except Exception as e:
                 excel.save(Modified_Excel)
                 print(f'👉 Saved to modified_pair.xlsx file')
@@ -178,4 +185,4 @@ if __name__ == '__main__':
                 bnb_price = getBNBPrice(provider = w3)                
                 token_price = getTokenPriceFromPoolAddress(provider = w3, index=index + 1, bnb_price = bnb_price)
 
-                writeToExcel(index, token_price, True)
+                writeToExcel(block.number, index, token_price, True)
