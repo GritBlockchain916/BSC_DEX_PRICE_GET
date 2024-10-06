@@ -48,11 +48,11 @@ def getBNBPrice(provider: Web3) -> float:
 #         print(f"Error fetching token price for {tokenAddress}: {e}")
 #         return 0
 
-def gettoken_priceFromPoolAddr(provider: Web3, index: int, bnb_price: float) -> float:
+def getTokenPriceFromPoolAddress(provider: Web3, index: int, bnb_price: float) -> float:
     dex_type = sheet[f'A{index}'].value  # the cell of dex type eg: Pancakeswap v2
     pair_type = sheet[f'B{index}'].value # the cell of pair type eg: CATI/USDT
     pool_addr = sheet[f'C{index}'].value # the cell of pair type eg: CATI/USDT
-    pool_addr = w3.to_checksum_address(pool_addr)
+    pool_addr = provider.to_checksum_address(pool_addr)
     
     try:
         before, separator, majorToken = pair_type.partition("/")
@@ -141,7 +141,7 @@ if __name__ == '__main__':
                 pool_addrs[checksum_address] = i
                 
                 bnb_price = getBNBPrice(provider = w3)                
-                token_price = gettoken_priceFromPoolAddr(provider = w3, index=i, bnb_price = bnb_price)
+                token_price = getTokenPriceFromPoolAddress(provider = w3, index=i, bnb_price = bnb_price)
                 writeToExcel(i, token_price, False)
             except Exception as e:
                 excel.save(Modified_Excel)
@@ -176,6 +176,6 @@ if __name__ == '__main__':
                     continue
 
                 bnb_price = getBNBPrice(provider = w3)                
-                token_price = gettoken_priceFromPoolAddr(provider = w3, index=index, bnb_price = bnb_price)
+                token_price = getTokenPriceFromPoolAddress(provider = w3, index=index + 1, bnb_price = bnb_price)
 
                 writeToExcel(index, token_price, True)
