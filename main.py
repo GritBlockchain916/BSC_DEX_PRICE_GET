@@ -158,17 +158,23 @@ if __name__ == '__main__':
         excel.save(Modified_Excel)
         w3.middleware_onion.inject(geth_poa_middleware, layer=0)
 
+        block_number = -1
+
         while(1):
             # Get the block data
-            block = w3.eth.get_block('latest', full_transactions=False)
+            if(block_number >= 0):
+                block_number += 1
+                block = w3.eth.get_block(block_number, full_transactions=False)
+            else:
+                block = w3.eth.get_block('latest', full_transactions=False)
+                block_number = block.number
 
+            print(f'block_number: {block_number}')
             # Get all transactions from the block
             transactions = block['transactions']
 
             for tx_hash in block['transactions']:
                 tx = w3.eth.get_transaction(tx_hash)
-                # if not isinstance(tx, dict):
-                #     continue
 
                 from_address = tx['from']
                 to_address = tx['to']
@@ -185,4 +191,4 @@ if __name__ == '__main__':
                 bnb_price = getBNBPrice(provider = w3)                
                 token_price = getTokenPriceFromPoolAddress(provider = w3, index=index + 1, bnb_price = bnb_price)
 
-                writeToExcel(block.number, index, token_price, True)
+                writeToExcel(block_number, index, token_price, True)
