@@ -37,22 +37,6 @@ def getBNBPrice(provider: Web3) -> float:
     amountOut = provider.from_wei(amountOut[1], 'ether')
     return amountOut
 
-
-# def gettoken_priceFromTokenAddr(provider: Web3, contractAddr: str, tokenAddress: str, tokensToSell: int) -> float:
-#     try:
-#         tokenRouter = provider.eth.contract(address=tokenAddress, abi=tokenABI)
-#         tokenDecimals = tokenRouter.functions.decimals().call()
-#         tokensToSell = int(str(tokensToSell).ljust(tokenDecimals + len(str(tokensToSell)), '0'))
-
-#         router = provider.eth.contract(address=contractAddr, abi=pancakeSwapABI)
-#         amountOut = router.functions.getAmountsOut(tokensToSell, [tokenAddress, BNBTokenAddress]).call()
-#         amountOut = provider.from_wei(amountOut[1], 'ether')
-#         print(f'💰 TOKEN PRICE: {amountOut}')
-#         return amountOut
-#     except Exception as e:
-#         print(f"Error fetching token price for {tokenAddress}: {e}")
-#         return 0
-
 def getTokenPriceFromPoolAddress(provider: Web3, row: list, bnb_price: float) -> float:
     dex_type = row[0]  # the cell of dex type eg: Pancakeswap v2
     pair_type = row[1] # the cell of pair type eg: CATI/USDT
@@ -67,6 +51,7 @@ def getTokenPriceFromPoolAddress(provider: Web3, row: list, bnb_price: float) ->
 
             # Call slot0 to get the current pool state
             slot0 = pool_contract.functions.slot0().call()
+            print(slot0)
             sqrt_price_x96 = slot0[0]  # Get the current price from slot0
 
             def decode_sqrt_price(sqrt_price_x96):
@@ -122,32 +107,16 @@ def isStableCoin(token_name: str) -> bool:
     if(token_name == "USDT" or token_name == "WBNB" or token_name == "ETH" or token_name == "USDC"):
         return True
 
-# def writeToExcel(block_number: int, index:int, token_price: float, save: bool):
-#     sheet[f'D{index}'] = token_price
-
-#     current_date = datetime.now().date()
-#     current_time = datetime.now().time().strftime("%H:%M:%S")
-#     sheet[f'E{index}'] = f'{current_date}:{current_time}'
-
-#     dex_type = sheet[f'A{index}'].value  # the cell of dex type eg: Pancakeswap v2
-#     pair_type = sheet[f'B{index}'].value # the cell of pair type eg: CATI/USDT
-
-#     if(block_number < 0):
-#         print(f'✅ 🛒: {dex_type},   🔗: {pair_type},   💰: {token_price},   ⏰: {current_date}:{current_time}')
-#     else:
-#         print(f'✅ Updated : {block_number}, 🛒: {dex_type},   🔗: {pair_type},   💰: {token_price},   ⏰: {current_date}:{current_time}')
-
-#     if(save):
-#         excel.save(Modified_Excel)
-
 def calculateBalance(token_name1: str, token_name2: str, balance: int):
     majorToken1, pool_addr1, token_price1 = pool_addrs[token_name1]
     majorToken2, pool_addr2, token_price2 = pool_addrs[token_name2]
 
     if(pool_addr1 == "" or pool_addr2 == ""):
         return 0
+    elif(token_name1 == token_name2):
+        return 1
     else:
-        return token_price1 / token_price2
+        return token_price1 * balance / token_price2
 
 
 if __name__ == '__main__':
@@ -239,30 +208,6 @@ if __name__ == '__main__':
                 exchange_balance = calculateBalance(token1, token2, large_price)
                 large_price_data[i + 1].append(exchange_balance)
 
-
-        # for i in range(2, 7452):
-        # # for i in range(2, 5):
-        #     try:
-        #         dex_type = sheet[f'A{i}'].value  # the cell of dex type eg: Pancakeswap v2
-        #         pair_type = sheet[f'B{i}'].value # the cell of pair type eg: CATI/USDT
-        #         pool_addr = sheet[f'C{i}'].value # the cell of pool address eg: 0x1234567890ABCDEF
-                
-        #         checksum_address = w3.to_checksum_address(pool_addr) # convert the pool address to checksum eg: 0x123ab4567ef89 -> 0x123Ab456eF89
-        #         pool_addrs[checksum_address] = i
-                
-        #         bnb_price = getBNBPrice(provider = w3)                
-        #         token_price = getTokenPriceFromPoolAddress(provider = w3, index=i, bnb_price = bnb_price)
-        #         writeToExcel(-1, i, token_price, False)
-        #     except Exception as e:
-        #         excel.save(Modified_Excel)
-        #         print(f'👉 Saved to modified_pair.xlsx file')
-        #         print(f"Error occoured {i}: {e}")
-
-        # excel.save(Modified_Excel)
-        # w3.middleware_onion.inject(geth_poa_middleware, layer=0)
-
-        # block_number = -1
-
         with open('small_price.csv', mode='w', newline='') as file:
             writer = csv.writer(file)
             writer.writerows(small_price_data.values())
@@ -276,36 +221,3 @@ if __name__ == '__main__':
             writer.writerows(large_price_data.values())
 
         print("done!!!")
-
-        # while(1):
-        #     # Get the block data
-        #     if(block_number >= 0):
-        #         block_number += 1
-        #         block = w3.eth.get_block(block_number, full_transactions=False)
-        #     else:
-        #         block = w3.eth.get_block('latest', full_transactions=False)
-        #         block_number = block.number
-
-        #     print(f'block_number: {block_number}')
-        #     # Get all transactions from the block
-        #     transactions = block['transactions']
-
-        #     for tx_hash in block['transactions']:
-        #         tx = w3.eth.get_transaction(tx_hash)
-
-        #         from_address = tx['from']
-        #         to_address = tx['to']
-
-        #         if(from_address in pool_addrs):
-        #             index = pool_addrs[from_address]
-
-        #         elif(to_address in pool_addrs):
-        #             index = pool_addrs[to_address]
-
-        #         else:
-        #             continue
-
-        #         bnb_price = getBNBPrice(provider = w3)                
-        #         token_price = getTokenPriceFromPoolAddress(provider = w3, index=index + 1, bnb_price = bnb_price)
-
-        #         writeToExcel(block_number, index, token_price, True)
