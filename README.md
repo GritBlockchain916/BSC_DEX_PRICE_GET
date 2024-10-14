@@ -17,6 +17,7 @@ source venv/bin/activate
 
 ### install dependencies
 ```bash
+sudo apt install build-essential python3-dev
 pip install web3==6.14.0
 pip install openpyxl
 ```

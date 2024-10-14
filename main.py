@@ -1,34 +1,36 @@
+# Import sample modules
 from web3 import Web3
-from openpyxl import load_workbook
 from web3.middleware import geth_poa_middleware
 
 from datetime import datetime
 import json
 import csv
 
-Modified_Excel = 'modified_pair.xlsx'
-URL = 'https://bsc-dataseed1.binance.org'
+# Utility Variables for BSC
+RPC_Endpoint = 'https://bsc-dataseed1.binance.org'
 RouterContract = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
 BNBTokenAddress = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
 USDTokenAddress  = "0x55d398326f99059fF775485246999027B3197955"
 
-pool_addrs = dict()
-small_price_data = dict()
-medium_price_data = dict()
-large_price_data = dict()
+# All pool informations
+pool_array = {}
+pool_map = {}
+# All token informations
+token_array = {}
+# All base token informations
+base_array = dict()
 
+# Import ABIs
 with open('token_abi.json', 'r') as f:
     tokenABI = json.load(f)
-
 with open('v2_abi.json', 'r') as f:
     v2_abi = json.load(f)
-
 with open('v3_abi.json', 'r') as f:
     v3_abi = json.load(f)
-
 with open('thena_abi.json', 'r') as f:
     thenaABI = json.load(f)
 
+# Getting the BNB Price
 def getBNBPrice(provider: Web3) -> float:   
     bnbToSell = provider.to_wei("1", "ether")
     contractAddr = w3.to_checksum_address(RouterContract)
@@ -37,21 +39,20 @@ def getBNBPrice(provider: Web3) -> float:
     amountOut = provider.from_wei(amountOut[1], 'ether')
     return amountOut
 
-def getTokenPriceFromPoolAddress(provider: Web3, row: list, bnb_price: float) -> float:
-    dex_type = row[0]  # the cell of dex type eg: Pancakeswap v2
-    pair_type = row[1] # the cell of pair type eg: CATI/USDT
-    pool_addr = row[2] # the cell of pool address eg: 0x1234567890ABCDEF
-    pool_addr = provider.to_checksum_address(pool_addr)
-
+# Getting the tokenPrice from pool
+def getTokenPriceFromPoolAddress(provider: Web3, 
+                                 dex_name : str,
+                                 quoteToken : str,
+                                 baseToken : str,
+                                 pool_address : str) -> float:
     try:
-        before, separator, majorToken = pair_type.partition("/")
-        if(dex_type == "Pancakeswap v3" or dex_type == "Uniswap v3"):
+        if(dex_name == "Pancakeswap v3" or dex_name == "Uniswap v3"):
             # Create a contract object for the liquidity pool
-            pool_contract = provider.eth.contract(address=pool_addr, abi=v3_abi)
+            pool_contract = provider.eth.contract(address=pool_address, abi=v3_abi)
 
             # Call slot0 to get the current pool state
             slot0 = pool_contract.functions.slot0().call()
-            print(slot0)
+            # print(slot0)
             sqrt_price_x96 = slot0[0]  # Get the current price from slot0
 
             def decode_sqrt_price(sqrt_price_x96):
@@ -59,12 +60,13 @@ def getTokenPriceFromPoolAddress(provider: Web3, row: list, bnb_price: float) ->
                 return price
 
             token_price = decode_sqrt_price(sqrt_price_x96)
-            if(majorToken == "WETH"):
-                token_price = 1e12 * token_price
-            else:
-                token_price = 1 / token_price
-        elif(dex_type == "THENA FUSION"):
-            pool_contract = provider.eth.contract(address=pool_addr, abi=thenaABI)
+            # if(baseToken == "WETH"):
+            #     token_price = 1e12 * token_price
+            # else:
+            #     token_price = 1 / token_price
+                
+        elif(dex_name == "THENA FUSION"):
+            pool_contract = provider.eth.contract(address=pool_address, abi=thenaABI)
 
             # Fetch reserves from the pool (usually it's getReserves or a similar function)
             globalState = pool_contract.functions.globalState().call()
@@ -76,10 +78,10 @@ def getTokenPriceFromPoolAddress(provider: Web3, row: list, bnb_price: float) ->
                 return price
             
             token_price = decode_sqrt_price(sqrt_price_x64)
+            
         else:
             # Create a contract object for the liquidity pool                                                                                                                                                                                           
-            pool_contract = provider.eth.contract(address=pool_addr, abi=v2_abi)
-
+            pool_contract = provider.eth.contract(address=pool_address, abi=v2_abi)
 
             # Call getReserves to fetch the pool reserves
             reserves = pool_contract.functions.getReserves().call()
@@ -95,21 +97,69 @@ def getTokenPriceFromPoolAddress(provider: Web3, row: list, bnb_price: float) ->
             else:
                 token_price = reserve1 / reserve0
         
-        if(majorToken == "WBNB" or majorToken == "BNB"):
+        bnb_price = getBNBPrice(provider)
+        if(baseToken == "WBNB"):
             token_price = float(token_price) * float(bnb_price)
 
         return token_price
     except Exception as e:
-        print(f"Error fetching token price for {pool_addr}: {e}")
+        print(f"Error fetching token price for {pool_address}: {e}")
         return 0
 
+def getTokenPrice(provider: Web3, 
+                 token_name : str) -> float:
+    
+    try:
+        if (token_name not in pool_array):
+            print("Unfortunately, unable to find the relevant token pool")
+            return 0
+
+        baseToken = ""
+        if ("USDT" in pool_array[token_name]):
+            baseToken = "USDT"
+        
+        elif ("WBNB" in pool_array[token_name]):
+            baseToken = "WBNB"
+        
+        if baseToken != "":
+            dex_name = pool_array[token_name][baseToken]["dex_name"]
+            pool_address = pool_array[token_name][baseToken]["address"]
+            
+            return getTokenPriceFromPoolAddress(provider, dex_name, token_name, baseToken, pool_address)
+        else:
+            # A -> Route, Route -> USDT or WBNB
+            route = ""
+            if "route" not in pool_array[token_name]:
+                return 0
+            route = pool_array[token_name]["route"]
+            
+            dex_name = pool_array[token_name][route]["dex_name"]
+            pool_address = pool_array[token_name][route]["address"]
+            token_price = getTokenPriceFromPoolAddress(provider, dex_name, token_name, route, pool_address)
+            
+            token_price2 = getTokenPrice(provider, route)
+            
+            return float(token_price) * float(token_price2)
+        
+    except Exception as e:
+        print("Error : ", e)
+        return 0
+    
+        
+
+# Check if stable coin
 def isStableCoin(token_name: str) -> bool:
-    if(token_name == "USDT" or token_name == "WBNB" or token_name == "ETH" or token_name == "USDC"):
+    if(token_name == "USDT" or token_name == "WBNB" or token_name == "USDC"):
+        return True
+    
+def isWBNB(token_name: str) -> bool:
+    if(token_name == "WBNB"):
         return True
 
+# Calculate Balance
 def calculateBalance(token_name1: str, token_name2: str, balance: int):
-    majorToken1, pool_addr1, token_price1 = pool_addrs[token_name1]
-    majorToken2, pool_addr2, token_price2 = pool_addrs[token_name2]
+    baseToken1, pool_addr1, token_price1 = pool_array[token_name1]
+    baseToken2, pool_addr2, token_price2 = pool_array[token_name2]
 
     if(pool_addr1 == "" or pool_addr2 == ""):
         return 0
@@ -118,106 +168,140 @@ def calculateBalance(token_name1: str, token_name2: str, balance: int):
     else:
         return token_price1 * balance / token_price2
 
+def updateResult(provider : Web3):
+    w3.middleware_onion.inject(geth_poa_middleware, layer=0)
 
-if __name__ == '__main__':
-    w3 = Web3(Web3.HTTPProvider(URL))
-    if w3.is_connected():
+    # Get the latest block
+    block = w3.eth.get_block('latest', full_transactions=False)
+    block_number = block.number
 
-        small_price = int(input("Please enter small price: "))
-        medium_price = int(input("Please enter medium price: "))
-        large_price = int(input("Please enter large price: "))
+    print(f'Latest Block Number : {block_number}')
+    # Get all transactions from the block
+    transactions = block['transactions']
 
-        with open('pairs.csv', mode='r') as file:
-            reader = csv.reader(file)
+    index = 0
+    monitored = 0
+    for tx_hash in block['transactions']:
+        if (index % 10 ==0):
+            print('.',end='', flush=True)
+        index += 1
+        tx = w3.eth.get_transaction(tx_hash)
 
-            is_title = True
-            for row in reader:
-                if(is_title):
-                    is_title = False
-                    continue
-
-                print(row)
-
-                try:
-                    dex_type = row[0]  # the cell of dex type eg: Pancakeswap v2
-                    pair_type = row[1] # the cell of pair type eg: CATI/USDT
-                    pool_addr = row[2] # the cell of pool address eg: 0x1234567890ABCDEF
-                
-                    quoteToken, separator, majorToken = pair_type.partition("/")
-                    checksum_address = w3.to_checksum_address(pool_addr) # convert the pool address to checksum eg: 0x123ab4567ef89 -> 0x123Ab456eF89
-
-                    bnb_price = getBNBPrice(provider = w3)                
-                    token_price = getTokenPriceFromPoolAddress(provider = w3, row=row, bnb_price = bnb_price)
-
-                    if(quoteToken in pool_addrs):
-                        if(isStableCoin(quoteToken)):
-                            pool_addrs[quoteToken] = [majorToken, checksum_address, token_price]
-                    else:
-                        pool_addrs[quoteToken] = [majorToken, checksum_address, token_price]
-                except:
-                    pool_addrs[quoteToken] = [majorToken, "", 0]
-                    continue
-
-        index = 1
-        for quoteToken, (majorToken, pool_addr, token_price) in pool_addrs.items():
-            
-            if 0 not in small_price_data:
-                small_price_data[0] = []
-
-            if 0 not in medium_price_data:
-                medium_price_data[0] = []
-
-            if 0 not in large_price_data:
-                large_price_data[0] = []
-                
-            if(index == 1):
-                small_price_data[0].append("")
-                medium_price_data[0].append("")
-                large_price_data[0].append("")
-            
-            small_price_data[0].append(quoteToken)
-            medium_price_data[0].append(quoteToken)
-            large_price_data[0].append(quoteToken)
+        from_address = tx['from']
+        to_address = tx['to']
         
-            small_price_data[index + 1] = []
-            small_price_data[index + 1].insert(0, quoteToken)
-            medium_price_data[index + 1] = []
-            medium_price_data[index + 1].insert(0, quoteToken)
-            large_price_data[index + 1] = []
-            large_price_data[index + 1].insert(0, quoteToken)
+        quoteToken = ""
+        baseToken = ""
+        
+        if(from_address in pool_map):
+            quoteToken = pool_map[from_address]["quoteToken"]
+            baseToken = pool_map[from_address]["baseToken"]
+            monitored += 1
 
-            index += 1
+        elif(to_address in pool_map):
+            quoteToken = pool_map[to_address]["quoteToken"]
+            baseToken = pool_map[to_address]["baseToken"]
+            monitored += 1
 
+        else:
+            continue
 
-        for i in range(index):
-            token1 = small_price_data[0][i]
-            if(token1 == ""): continue
+        print(quoteToken, "/", baseToken)
 
-            print(f'token1: {token1}')
-            for j in range(index):
-                token2 = small_price_data[0][j]
-                if(token2 == ""): continue
+    print('')
+    print("Total transactions :",index)
+    print("Monitored :",monitored)
+
+        # bnb_price = getBNBPrice(provider = w3)                
+        # token_price = getTokenPriceFromPoolAddress(provider = w3, index=index + 1, bnb_price = bnb_price)
+
+        # writeToExcel(block_number, index, token_price, True)
+
+# Main function
+if __name__ == '__main__':
+    w3 = Web3(Web3.HTTPProvider(RPC_Endpoint))
+    if w3.is_connected():
+        print("====================================================")
+        print("🗝️  Start analyzing pairs.csv file ...")
+        print("====================================================")
+        
+        with open('pairs_all.csv', mode='r') as file:
+            reader = csv.reader(file)
+            cnt = 0
+            for row in reader:
+                if(cnt == 0):
+                    cnt = 1
+                    continue
+
+                try: 
+                    dex_name = row[0]       # the cell of dex type eg: Pancakeswap v2
+                    token_pairs = row[1]    # the cell of pair type eg: CATI/USDT
+                    pool_address = row[2]   # the cell of pool address eg: 0x1234567890ABCDEF
                 
-                print(f'token2: {token2}')
-                exchange_balance = calculateBalance(token1, token2, small_price)
-                small_price_data[i + 1].append(exchange_balance)
+                    quoteToken, separator, baseToken = token_pairs.partition("/")
+                    pool_address = w3.to_checksum_address(pool_address) # convert the pool address to checksum eg: 0x123ab4567ef89 -> 0x123Ab456eF89
 
-                exchange_balance = calculateBalance(token1, token2, medium_price)
-                medium_price_data[i + 1].append(exchange_balance)
+                    if quoteToken not in pool_array:
+                        pool_array[quoteToken] = {}
+                    pool_array[quoteToken][baseToken] = {"dex_name" : dex_name, "address" : pool_address}
+                    pool_map[pool_address] = {"quoteToken" : quoteToken, "baseToken" : baseToken}
+                    
+                    if baseToken not in pool_array:
+                        pool_array[baseToken] = {}
+                    pool_array[baseToken][quoteToken] = {"dex_name" : dex_name, "address" : pool_address}
+                    
+                except:
+                    # ignore tokens with the unknown address
+                    continue
+            
+                cnt += 1
+                
+        # Filter tokens ()
+        print("====================================================")
+        print("🗝️  Filtering tokens ...")        
+        print("====================================================")
 
-                exchange_balance = calculateBalance(token1, token2, large_price)
-                large_price_data[i + 1].append(exchange_balance)
+        for quoteToken in pool_array:
+            if "WBNB" not in pool_array[quoteToken] and "USDT" not in pool_array[quoteToken]:
+                route = ""
+                for baseToken in pool_array[quoteToken]:
+                    if "WBNB" in pool_array[baseToken] or "USDT" in pool_array[baseToken]:
+                        route = baseToken
+                        break
+                
+                if (route != ""):
+                    token_array[quoteToken] = True
+                    pool_array[quoteToken]["route"] = route
+            else:
+                token_array[quoteToken] = True
 
-        with open('small_price.csv', mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerows(small_price_data.values())
+        print("====================================================")
+        # while(1):
+        updateResult(w3)
+        
 
-        with open('medium_price.csv', mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerows(medium_price_data.values())
+        # print ("Valuable Tokens")
+        # for index, quoteToken in enumerate(token_array):
+        #     print(index, quoteToken)
+        #     token_price = getTokenPrice(w3, quoteToken)
+        #     print("price : ", token_price, "$")
 
-        with open('large_price.csv', mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerows(large_price_data.values())
 
-        print("done!!!")
+        # print("Specified Base Tokens : ")
+        # for index, cur in enumerate(base_array):
+        #     print(index, " : ",cur)
+        
+#       small_price = int(input("Input small price 💰 : "))
+#       medium_price = int(input("Input medium price 💰 : "))
+#       large_price = int(input("Input large price 💰 : "))
+        
+#       print("1 ", quoteToken, " = ", token_price, " ", baseToken)
+#       print("https://dexscreener.com/bsc/" + pool_address)
+
+#       bnb_price = getBNBPrice(provider = w3)                
+#       token_price = getTokenPriceFromPoolAddress(provider = w3, 
+#       dex_name = dex_name,
+#       quoteToken = quoteToken, 
+#       baseToken = baseToken,
+#       pool_address = pool_address,
+#       bnb_price = bnb_price)
